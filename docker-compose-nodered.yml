@@ -1,0 +1,156 @@
+version: '2'
+
+volumes:
+  redis: 
+  postgres:
+  stack-blob:
+  stack-data:
+  nodered-data:
+
+services:
+
+  postgres:
+    image: postgres:11.12
+    restart: unless-stopped
+    environment:
+      - POSTGRES_PASSWORD=root
+      - POSTGRES_USER=root
+      - POSTGRES_DB=ttn_lorawan
+    volumes:
+      - 'postgres:/var/lib/postgresql/data'
+    ports:
+      - "127.0.0.1:5432:5432"
+    labels:
+      io.balena.features.kernel-modules: '1'
+      io.balena.features.firmware: '1'
+      io.balena.features.dbus: '1'
+      io.balena.features.supervisor-api: '1'
+      io.balena.features.balena-api: '1'
+    
+  redis:
+    image: redis:6.2.4-alpine3.13
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    volumes:
+      - 'redis:/data'
+    ports:
+      - "127.0.0.1:6379:6379"
+    labels:
+      io.balena.features.kernel-modules: '1'
+      io.balena.features.firmware: '1'
+      io.balena.features.dbus: '1'
+      io.balena.features.supervisor-api: '1'
+      io.balena.features.balena-api: '1'
+  
+  stack:
+    build: ./lorawan-stack
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - postgres
+    volumes:
+      - 'stack-blob:/srv/ttn-lorawan/public/blob'
+      - 'stack-data:/srv/data'
+    environment:
+      TTN_LW_BLOB_LOCAL_DIRECTORY: /srv/ttn-lorawan/public/blob
+      TTN_LW_REDIS_ADDRESS: redis:6379
+      TTN_LW_IS_DATABASE_URI: postgres://root:root@postgres:5432/ttn_lorawan?sslmode=disable
+
+    ports:
+    
+      - "88:1885"
+      - "443:8885"
+    
+      - "1881:1881"
+      - "1882:1882"
+      - "1883:1883"
+      - "1884:1884"
+      - "1885:1885"
+      - "1887:1887"
+    
+      - "8881:8881"
+      - "8882:8882"
+      - "8883:8883"
+      - "8884:8884"
+      - "8885:8885"
+      - "8887:8887"
+    
+      - "1700:1700/udp"
+    
+    labels:
+      io.balena.features.kernel-modules: '1'
+      io.balena.features.firmware: '1'
+      io.balena.features.dbus: '1'
+      io.balena.features.supervisor-api: '1'
+      io.balena.features.balena-api: '1'
+  
+  # ------------------------------------------------------------------------------------
+  # git submodule add https://github.com/balenalabs/basicstation
+  # ------------------------------------------------------------------------------------
+  basicstation:
+    build: ./basicstation
+    restart: unless-stopped
+    privileged: true
+    network_mode: host
+    labels:
+      io.balena.features.kernel-modules: '1'
+      io.balena.features.firmware: '1'
+      io.balena.features.dbus: '1'
+      io.balena.features.supervisor-api: '1'
+      io.balena.features.balena-api: '1'
+
+  # ------------------------------------------------------------------------------------
+  # mqtt + nodered
+  # ------------------------------------------------------------------------------------
+  nodered:
+    build: 
+      context: nodered
+      dockerfile: Dockerfile.template
+    network_mode: "host"
+    labels:
+      - "io.balena.features.sysfs=1"
+      - "io.balena.features.dbus=1"
+    environment:
+      UDEV: '1'
+      DBUS_SYSTEM_BUS_ADDRESS: "unix:path=/host/run/dbus/system_bus_socket"
+      INITSYSTEM: "on"
+    privileged: true
+    volumes:
+      - "nodered-data:/data"
+    
+  mqtt:
+    build:
+      context: mqtt
+      dockerfile: Dockerfile.template
+    ports:
+      - "2883:1883"
+
+
+
+  # ------------------------------------------------------------------------------------
+  # git submodule add https://github.com/AllWize/balena-legacy-packet-forwarder/
+  # ------------------------------------------------------------------------------------
+  #legacy:
+  #  build: ./balena-legacy-packet-forwarder
+  #  restart: unless-stopped
+  #  privileged: true
+  #  network_mode: host
+  #  labels:
+  #    io.balena.features.kernel-modules: '1'
+  #    io.balena.features.firmware: '1'
+  #    io.balena.features.dbus: '1'
+  #    io.balena.features.supervisor-api: '1'
+  #    io.balena.features.balena-api: '1'
+
+  # ------------------------------------------------------------------------------------
+  # git submodule add https://github.com/balena-os/wifi-connect
+  # ------------------------------------------------------------------------------------
+  #wifi-connect:
+  #  build: ./wifi-connect
+  #  network_mode: "host"
+  #  labels:
+  #      io.balena.features.dbus: '1'
+  #  cap_add:
+  #      - NET_ADMIN
+  #  environment:
+  #      DBUS_SYSTEM_BUS_ADDRESS: "unix:path=/host/run/dbus/system_bus_socket"
